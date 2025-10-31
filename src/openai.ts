@@ -70,6 +70,9 @@ export async function responsesToolCall(
   // Prefer explicit tool calls in data.output items.
   const output = data.output ?? data.response ?? data; // be defensive
   if (Array.isArray(output)) {
+
+    // console.log("data.output", data.output);
+
     for (const item of output) {
       if (item.type === "function_call" && item.name && item.arguments) {
         try {
