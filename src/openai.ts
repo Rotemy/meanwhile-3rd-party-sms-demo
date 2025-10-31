@@ -13,38 +13,44 @@ export async function responsesToolCall(
     { role: "system", content: env.DEDICATED_PROMPT },
     ...transcript,
   ];
+  
   const body = {
     model: "gpt-4.1-mini",
     input,
     tools: [
       {
         type: "function",
-        function: {
-          name: "ask_user",
-          description: "Ask a single short clarification question",
-          parameters: {
-            type: "object",
-            properties: { question: { type: "string" } },
-            required: ["question"],
-          },
+        name: "ask_user",
+        description: "Ask a single short clarification question",
+        parameters: {
+          type: "object",
+          properties: { question: { type: "string" } },
+          required: ["question"],
         },
       },
       {
         type: "function",
-        function: {
-          name: "submit_if_ready",
-          description: "Submit final structured payload",
-          parameters: {
-            type: "object",
-            properties: { payload: { type: "object" } },
-            required: ["payload"],
+        name: "submit_if_ready",
+        description: "Submit final structured payload when all fields are present",
+        parameters: {
+          type: "object",
+          properties: {
+            age: { type: "integer", minimum: 0, maximum: 120 },
+            gender: { type: "string", enum: ["male", "female"] },
+            smoking: { type: "boolean" },
+            country: { type: "string", minLength: 2 },
+            coverage_btc: { type: "number", minimum: 0 }
           },
-        },
-      },
+          required: ["age", "gender", "smoking", "country", "coverage_btc"],
+          additionalProperties: false
+        }
+      }
     ],
     temperature: 0.2,
+    // optional but fine:
+    // tool_choice: "auto",
   };
-
+  
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -65,14 +71,14 @@ export async function responsesToolCall(
   const output = data.output ?? data.response ?? data; // be defensive
   if (Array.isArray(output)) {
     for (const item of output) {
-      if (item.type === "tool_call" && item.name && item.arguments) {
+      if (item.type === "function_call" && item.name && item.arguments) {
         try {
           const args = typeof item.arguments === "string" ? JSON.parse(item.arguments) : item.arguments;
           if (item.name === "ask_user" && typeof args?.question === "string") {
             return { tool: "ask_user", args: { question: args.question } };
           }
-          if (item.name === "submit_if_ready" && args?.payload != null) {
-            return { tool: "submit_if_ready", args: { payload: args.payload } };
+          if (item.name === "submit_if_ready" && args) {
+            return { tool: "submit_if_ready", args };
           }
         } catch (_e) {
           // fallthrough

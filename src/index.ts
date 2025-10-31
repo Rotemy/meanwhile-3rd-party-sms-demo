@@ -23,11 +23,16 @@ export default {
         return new Response("Not Found", { status: 404 });
       }
 
+      console.log("request", json(request))
+      
       // Parse form preserving insertion order
       const form = await parseFormUrlEncoded(request);
       const from = form.obj["From"] || "";
       const to = form.obj["To"] || "";
       const body = (form.obj["Body"] || "").trim();
+
+      console.log("from", from);
+      console.log("body", body);
 
       // Optional Twilio signature verification
       if ((env.VERIFY_TWILIO_SIGNATURE || "false").toLowerCase() === "true") {
@@ -55,31 +60,41 @@ export default {
       }));
       transcript.push({ role: "user", content: body });
 
+      // const transcript: TranscriptMessage[] = [];
+      // transcript.push({ role: "user", content: body });
+
+      console.log("transcript", transcript);
+
       // OpenAI tool call
       const toolResult = await responsesToolCall({ OPENAI_API_KEY: env.OPENAI_API_KEY, DEDICATED_PROMPT: env.DEDICATED_PROMPT }, transcript);
 
       if (toolResult.tool === "ask_user") {
         const q = toolResult.args.question;
         await sendSms({ TWILIO_ACCOUNT_SID: env.TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN: env.TWILIO_AUTH_TOKEN, TWILIO_NUMBER: env.TWILIO_NUMBER }, from, clamp(q));
-        return json({ ok: true, action: "asked_user" });
       }
 
       if (toolResult.tool === "submit_if_ready") {
         const validation = validatePayload(toolResult.args.payload);
         if (!validation.ok) {
           await sendSms({ TWILIO_ACCOUNT_SID: env.TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN: env.TWILIO_AUTH_TOKEN, TWILIO_NUMBER: env.TWILIO_NUMBER }, from, clamp(validation.error));
-          return json({ ok: true, action: "needs_more_info" });
         }
-        const result = await callExternalApi({ EXTERNAL_API_URL: env.EXTERNAL_API_URL, EXTERNAL_API_KEY: env.EXTERNAL_API_KEY }, validation.value);
-        const msg = clamp(formatForSms(result));
-        await sendSms({ TWILIO_ACCOUNT_SID: env.TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN: env.TWILIO_AUTH_TOKEN, TWILIO_NUMBER: env.TWILIO_NUMBER }, from, msg);
-        return json({ ok: true, action: "submitted" });
+        else {
+          const result = await callExternalApi({ EXTERNAL_API_URL: env.EXTERNAL_API_URL, EXTERNAL_API_KEY: env.EXTERNAL_API_KEY }, validation.value);
+          const msg = clamp(formatForSms(result));
+          await sendSms({ TWILIO_ACCOUNT_SID: env.TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN: env.TWILIO_AUTH_TOKEN, TWILIO_NUMBER: env.TWILIO_NUMBER }, from, msg);
+        }
       }
 
-      // No tool call - fallback
-      const fallback = toolResult.text?.trim() || "I did not get that. What is the main detail I should know?";
-      await sendSms({ TWILIO_ACCOUNT_SID: env.TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN: env.TWILIO_AUTH_TOKEN, TWILIO_NUMBER: env.TWILIO_NUMBER }, from, clamp(fallback));
-      return json({ ok: true, action: "fallback" });
+      // // No tool call - fallback
+      // const fallback = toolResult.text?.trim() || "I did not get that. What is the main detail I should know?";
+      // await sendSms({ TWILIO_ACCOUNT_SID: env.TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN: env.TWILIO_AUTH_TOKEN, TWILIO_NUMBER: env.TWILIO_NUMBER }, from, clamp(fallback));
+      // return json({ ok: true, action: "fallback" });
+
+      return new Response("OK", {
+        status: 200,
+        headers: { "Content-Type": "text/plain" },
+      });
+
     } catch (err: any) {
       console.error(err);
       // Best-effort notify user if From is available
