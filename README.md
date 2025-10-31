@@ -2,8 +2,9 @@
 
 Stateless SMS intake using Twilio and OpenAI Responses API. No server-side persistence. The Worker rebuilds a short transcript on each request and guides the user to a structured payload, then submits to your API.
 
-## Endpoint
+## Endpoints
 - POST `/api/sms` - Twilio webhook (application/x-www-form-urlencoded)
+- GET `/test/external-api` - Test route to verify external API integration (returns mock payload and result)
 
 ## Setup
 1) Buy/configure a Twilio number. Set Messaging webhook to `https://<your-worker>.workers.dev/api/sms`.

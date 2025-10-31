@@ -19,11 +19,10 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     try {
       const url = new URL(request.url);
+      
       if (request.method !== "POST" || url.pathname !== "/api/sms") {
         return new Response("Not Found", { status: 404 });
       }
-
-      console.log("request", json(request))
       
       // Parse form preserving insertion order
       const form = await parseFormUrlEncoded(request);
@@ -31,8 +30,11 @@ export default {
       const to = form.obj["To"] || "";
       const body = (form.obj["Body"] || "").trim();
 
-      console.log("from", from);
-      console.log("body", body);
+      // Mock route for testing external API
+      // if (url.pathname === "/test/external-api") {
+      //   const pdfURL = "https://www.google.com/pdf";
+      //   await sendSms({ TWILIO_ACCOUNT_SID: env.TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN: env.TWILIO_AUTH_TOKEN, TWILIO_NUMBER: env.TWILIO_NUMBER }, from, clamp(q));
+      // }
 
       // Optional Twilio signature verification
       if ((env.VERIFY_TWILIO_SIGNATURE || "false").toLowerCase() === "true") {
@@ -41,18 +43,12 @@ export default {
         if (!ok) return new Response("Forbidden", { status: 403 });
       }
 
-      // STOP/CANCEL handling
-      if (/^(stop|cancel)$/i.test(body)) {
-        await sendSms({ TWILIO_ACCOUNT_SID: env.TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN: env.TWILIO_AUTH_TOKEN, TWILIO_NUMBER: env.TWILIO_NUMBER }, from, "You have been unsubscribed. Reply START to opt back in.");
-        return json({ ok: true });
-      }
-
       // Build transcript from recent messages
       const recent = await fetchRecentMessages(
         { TWILIO_ACCOUNT_SID: env.TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN: env.TWILIO_AUTH_TOKEN, TWILIO_NUMBER: env.TWILIO_NUMBER },
         from,
         env.TWILIO_NUMBER,
-        10
+        100
       );
       const transcript: TranscriptMessage[] = recent.map((m) => ({
         role: m.direction === "in" ? "user" : "assistant",
@@ -60,35 +56,29 @@ export default {
       }));
       transcript.push({ role: "user", content: body });
 
-      // const transcript: TranscriptMessage[] = [];
-      // transcript.push({ role: "user", content: body });
-
       console.log("transcript", transcript);
 
       // OpenAI tool call
       const toolResult = await responsesToolCall({ OPENAI_API_KEY: env.OPENAI_API_KEY, DEDICATED_PROMPT: env.DEDICATED_PROMPT }, transcript);
 
-      if (toolResult.tool === "ask_user") {
-        const q = toolResult.args.question;
-        await sendSms({ TWILIO_ACCOUNT_SID: env.TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN: env.TWILIO_AUTH_TOKEN, TWILIO_NUMBER: env.TWILIO_NUMBER }, from, clamp(q));
-      }
+      console.log("toolResult", toolResult);
 
-      if (toolResult.tool === "submit_if_ready") {
-        const validation = validatePayload(toolResult.args.payload);
-        if (!validation.ok) {
-          await sendSms({ TWILIO_ACCOUNT_SID: env.TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN: env.TWILIO_AUTH_TOKEN, TWILIO_NUMBER: env.TWILIO_NUMBER }, from, clamp(validation.error));
-        }
-        else {
-          const result = await callExternalApi({ EXTERNAL_API_URL: env.EXTERNAL_API_URL, EXTERNAL_API_KEY: env.EXTERNAL_API_KEY }, validation.value);
-          const msg = clamp(formatForSms(result));
-          await sendSms({ TWILIO_ACCOUNT_SID: env.TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN: env.TWILIO_AUTH_TOKEN, TWILIO_NUMBER: env.TWILIO_NUMBER }, from, msg);
-        }
-      }
+      // if (toolResult.tool === "ask_user") {
+      //   const q = toolResult.args.question;
+      //   await sendSms({ TWILIO_ACCOUNT_SID: env.TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN: env.TWILIO_AUTH_TOKEN, TWILIO_NUMBER: env.TWILIO_NUMBER }, from, clamp(q));
+      // }
 
-      // // No tool call - fallback
-      // const fallback = toolResult.text?.trim() || "I did not get that. What is the main detail I should know?";
-      // await sendSms({ TWILIO_ACCOUNT_SID: env.TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN: env.TWILIO_AUTH_TOKEN, TWILIO_NUMBER: env.TWILIO_NUMBER }, from, clamp(fallback));
-      // return json({ ok: true, action: "fallback" });
+      // if (toolResult.tool === "submit_if_ready") {
+      //   const validation = validatePayload(toolResult.args.payload);
+      //   if (!validation.ok) {
+      //     await sendSms({ TWILIO_ACCOUNT_SID: env.TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN: env.TWILIO_AUTH_TOKEN, TWILIO_NUMBER: env.TWILIO_NUMBER }, from, clamp(validation.error));
+      //   }
+      //   else {
+      //     const result = await callExternalApi({ EXTERNAL_API_URL: env.EXTERNAL_API_URL, EXTERNAL_API_KEY: env.EXTERNAL_API_KEY }, validation.value);
+      //     const msg = clamp(formatForSms(result));
+      //     await sendSms({ TWILIO_ACCOUNT_SID: env.TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN: env.TWILIO_AUTH_TOKEN, TWILIO_NUMBER: env.TWILIO_NUMBER }, from, msg);
+      //   }
+      // }
 
       return new Response("OK", {
         status: 200,
