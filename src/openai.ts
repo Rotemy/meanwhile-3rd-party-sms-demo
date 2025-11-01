@@ -71,7 +71,7 @@ export async function responsesToolCall(
   const output = data.output ?? data.response ?? data; // be defensive
   if (Array.isArray(output)) {
 
-    // console.log("data.output", data.output);
+    console.log("data.output", JSON.stringify(data.output));
 
     for (const item of output) {
       if (item.type === "function_call" && item.name && item.arguments) {
@@ -86,6 +86,8 @@ export async function responsesToolCall(
         } catch (_e) {
           // fallthrough
         }
+      } else if (item.type === "message" && item.content && item.content.length > 0) {
+        return { tool: "ask_user", args: { question: item.content[0].text } };
       }
     }
   }
